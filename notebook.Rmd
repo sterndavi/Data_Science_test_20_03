@@ -1,0 +1,260 @@
+---
+title: "Data science eliminatory test"
+author: "Davi Stern"
+
+---
+
+
+```{r}
+library(readxl)
+library(here)
+library(tidyverse)
+
+```
+
+--> Dados de venda - df_sales
+- ID: identificador único de uma venda
+- ProductID: identificador único de um produto
+- ClientID: identificador único de um cliente
+- Discount: desconto aplicado em uma venda
+- UnitPrice: preço unitário de um produto vendido
+- Quantity: quantidade de produto vendido em uma venda
+- StoreID: identificador único de uma loja
+- Date: data de uma venda
+
+--> Dados de consumidores - df_costumers
+- ID: identificador único de um consumidor
+- City: cidade/localidade onde um consumidor fez a compra
+- State: Unidade Federativa onde um consumidor fez a compra
+- DateOfBirth: data de nascimento de um consumidor
+- Sex: sexo de um consumidor
+
+--> Dados de lojas - df_store
+- ID: identificador único de uma loja
+- Name: cidade/localidade de uma loja
+- State: Unidade Federativa de uma loja
+
+--> Dados de produto - df_products
+- ID: identificador único de um produto
+- Name: nome de um produto
+- Size: tamanho de um produto
+
+```{r}
+sheet_path <- "data/Base de Dados - Questionário.xlsx"
+
+df_sales <- read_xlsx(sheet_path, sheet = "Sheet1")
+
+df_customers <- read_xlsx(sheet_path, sheet = "Sheet3")
+
+df_store <- read_xlsx(sheet_path, sheet = "Sheet4")
+
+df_products <- read_xlsx(sheet_path, sheet = "Sheet2")
+
+```
+
+
+```{r}
+
+df_join <- df_sales %>% 
+    left_join(
+        df_products, by = c("ProductID" = "ID")
+        ) %>% 
+    left_join(
+        df_customers, by = c("ClientID" = "ID")
+    ) %>% 
+    left_join(
+        df_store, by = c("StoreID" = "ID"), suffix = c(".join", ".store")
+    )
+
+```
+
+
+
+```{r}
+df_unique_sales <- 
+    df_sales %>% 
+    group_by(ProductID) %>% 
+    summarise(count = n()) %>% 
+    arrange(desc(count)) %>% 
+    left_join(df_products, by = c("ProductID" = "ID"))
+
+```
+
+
+```{r}
+Answer_5 <- glue::glue("Foram vendidos {nrow(df_unique_sales)} produtos únicos") %>% 
+    print()
+
+```
+
+```{r}
+df_total_sales <- 
+    df_sales %>% 
+    group_by(ProductID) %>% 
+    summarise(total_vendas = sum(Quantity)) %>% 
+    arrange(desc(total_vendas)) %>% 
+    left_join(df_products, by = c("ProductID" = "ID"))
+
+df_total_sales
+```
+
+```{r}
+
+Answer_6 <- glue::glue("O produto mais vendido foi {df_total_sales$Name[1]}, tamanho {df_total_sales$Size[1]} com {df_total_sales$total_vendas[1]} unidades vendidas") %>% 
+    print()
+
+```
+
+7. Considerando o ano de 2019, qual gráfico abaixo mais se parece à quantidade mensal do vendida do produto "Iron Man, G" ? 
+```{r}
+df_prod_filtered <- df_products %>% 
+    filter(Name == "Iron Man" & Size == "G")
+
+
+df_sales_2019 <-  df_sales %>%
+    filter(lubridate::year(Date) == 2019) %>% 
+    right_join(df_prod_filtered, by = c("ProductID" = "ID")) %>% 
+    group_by(month = lubridate::month(Date)) %>% 
+    summarise(count = n())
+
+
+plot_sales_2019 <- df_sales_2019 %>% 
+    ggplot(aes(month, count)) +
+    geom_line()
+
+plot_sales_2019
+
+```
+
+8. Considerando a *receita líquida* *mensal* de vendas em *2019*. Quais os valores de: média, mediana e desvio padrão desses valores? 
+
+1. agregar valor de venda por mês
+2. calcular receita total considerando o desconto
+
+
+```{r}
+
+montly_sales_2019_complete <- df_sales %>% 
+    filter(lubridate::year(Date) == 2019) %>% 
+    mutate(Month = lubridate::month(Date)) %>% 
+    group_by(Month) %>% 
+    summarise(receita_liquida = sum((UnitPrice * (1 - Discount)) * Quantity))
+
+
+```
+
+```{r}
+mean <- mean(montly_sales_2019_complete$receita_liquida)
+
+median <- median(montly_sales_2019_complete$receita_liquida)
+
+sd <- sd(montly_sales_2019_complete$receita_liquida)
+
+
+```
+
+
+```{r}
+answer_8 <- glue::glue("{mean} // {median} // {sd}")
+
+print(answer_8)
+
+```
+
+9. Ainda considerando os dados de receita líquida de vendas em 2019, seu time deve focar esforços em uma das lojas para criar análises mais profundas e a primeira versão do modelo preditivo. Qual destas lojas você escolheria para prosseguir com o projeto? (1 ponto)
+
+Quais criterios?
+
+considerando que preciso fittar um modelo, eu preciso utilizar a loja com maior numero de observações para permitir a divisao entre testes, validaçoes e treinos
+
+
+portanto podemos começar selecionando a loja com maior numero de vendas em 2019
+
+```{r}
+sales_2019_by_store <- df_sales %>% 
+    filter(lubridate::year(Date) == 2019) %>% 
+    mutate(
+        Month = lubridate::month(Date),
+        receita_liquida = ((UnitPrice * (1 - Discount)) * Quantity)
+        ) %>% 
+    left_join(df_store, by = c("StoreID" = "ID"))
+
+
+sales_per_store <- sales_2019_by_store %>% 
+    group_by(Name, Month) %>% 
+    summarise(receita_liq = sum(receita_liquida),
+              count = n()
+              )
+
+
+```
+
+
+Receita se comporta de maneira similar entre Florianópolis, Rio, Porto Alegre, de maneira geral, há claras tendencias sazonais nas vendas
+```{r}
+receita_plot <- sales_per_store %>% ggplot(aes(Month, receita_liq))+
+    geom_line()+ 
+    facet_wrap(~Name)
+    
+
+receita_plot
+
+```
+O comportamento da quantidade vendida é similar a da receita
+```{r}
+count_plot <- sales_per_store %>% ggplot(aes(Month, count))+
+    geom_line()+ 
+    facet_wrap(~Name)
+    
+
+count_plot
+
+```
+
+Florianópolis tem o maior sample size, mas seria importante analisar o perfil dos clientes entre as lojas
+
+```{r}
+sales_per_store_anual <- sales_2019_by_store %>% 
+    group_by(Name) %>% 
+    summarise(receita_liq = sum(receita_liquida),
+              count = n()
+              )
+sales_per_store_anual %>% arrange(desc(receita_liq))
+```
+
+
+```{r}
+
+sales_per_store_clients <- sales_2019_by_store %>% 
+    left_join(df_customers, by = c("ClientID" = "ID")) %>% 
+    select(-State.x, -State.y) %>% 
+    mutate(Age = lubridate::year(lubridate::today()) - lubridate::year(DateOfBirth))
+
+count_per_age <-  
+    sales_per_store_clients %>% 
+    group_by(Name, Age)
+
+count_per_age_plot <- 
+    count_per_age %>% ggplot(aes(Age))+
+    geom_histogram(binwidth = 5)+
+    facet_wrap(~Name)
+    
+
+count_per_age_plot
+```
+
+```{r}
+count_per_sex <-  
+    sales_per_store_clients %>% 
+    group_by(Name, Sex)
+
+count_per_sex_plot <- 
+    count_per_sex %>% ggplot(aes(Sex))+
+    geom_histogram(stat = "count")+
+    facet_wrap(~Name)
+
+count_per_sex_plot
+```
+
+
+
